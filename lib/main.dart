@@ -11,20 +11,82 @@ class TextEditorModel extends ChangeNotifier {
   String text = 'Hello, World!';
   Color textColor = Colors.black;
   double fontSize = 20.0;
-  // Add more properties as needed
+  double positionX = 0.0;
+  double positionY = 0.0;
+
+  // Maintain a stack for undo and redo
+  List<TextEditorModel> history = [];
+  int historyIndex = -1;
 
   void changeText(String newText) {
+    saveState();
     text = newText;
     notifyListeners();
   }
 
   void changeTextColor(Color newColor) {
+    saveState();
     textColor = newColor;
     notifyListeners();
   }
 
   void changeFontSize(double newSize) {
+    saveState();
     fontSize = newSize;
+    notifyListeners();
+  }
+
+  void updatePosition(double x, double y) {
+    saveState();
+    positionX = x;
+    positionY = y;
+    notifyListeners();
+  }
+
+  void saveState() {
+    // Save the current state for undo
+    if (historyIndex < history.length - 1) {
+      // Clear future history when new state is added after undo
+      history.removeRange(historyIndex + 1, history.length);
+    }
+    history.add(TextEditorModel()
+      ..text = text
+      ..textColor = textColor
+      ..fontSize = fontSize
+      ..positionX = positionX
+      ..positionY = positionY);
+    historyIndex = history.length - 1;
+  }
+
+  bool canUndo() {
+    return historyIndex > 0;
+  }
+
+  bool canRedo() {
+    return historyIndex < history.length - 1;
+  }
+
+  void undo() {
+    if (canUndo()) {
+      historyIndex--;
+      restoreState();
+    }
+  }
+
+  void redo() {
+    if (canRedo()) {
+      historyIndex++;
+      restoreState();
+    }
+  }
+
+  void restoreState() {
+    TextEditorModel prevState = history[historyIndex];
+    text = prevState.text;
+    textColor = prevState.textColor;
+    fontSize = prevState.fontSize;
+    positionX = prevState.positionX;
+    positionY = prevState.positionY;
     notifyListeners();
   }
 }
@@ -35,7 +97,7 @@ class MyApp extends StatelessWidget {
     return ChangeNotifierProvider(
       create: (context) => TextEditorModel(),
       child: MaterialApp(
-        title: 'Text Editor App',
+        title: 'Celebrare App',
         home: TextEditorScreen(),
       ),
     );
@@ -47,19 +109,17 @@ class TextEditorScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Text Editor'),
+        title: Text('Celebrare '),
       ),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.start,
           children: [
             TextEditorControls(),
-          SizedBox(height: 20.0),
-        Expanded(
-          child: Center(
-            child: TextEditorCanvas(),
-          ),
-        ),
+            SizedBox(height: 20.0),
+            Expanded(
+              child: DraggableTextEditor(),
+            ),
           ],
         ),
       ),
@@ -67,29 +127,76 @@ class TextEditorScreen extends StatelessWidget {
   }
 }
 
+class DraggableTextEditor extends StatefulWidget {
+  @override
+  _DraggableTextEditorState createState() => _DraggableTextEditorState();
+}
 
-class TextEditorCanvas extends StatelessWidget {
+class _DraggableTextEditorState extends State<DraggableTextEditor> {
+
+
   @override
   Widget build(BuildContext context) {
     final model = Provider.of<TextEditorModel>(context);
+    double screenWidth = MediaQuery.of(context).size.width;
+    double screenHeight = MediaQuery.of(context).size.height;
 
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.black),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: Text(
-          model.text,
-          style: TextStyle(
-            color: model.textColor,
-            fontSize: model.fontSize,
+    Offset position = Offset(model.positionX, model.positionY);
+
+    return Positioned(
+      left: position.dx,
+      top: position.dy,
+      child: Draggable(
+        feedback: Container(
+          child: Padding(
+            padding: const EdgeInsets.all(8.0), // Add padding here
+            child: Container(
+              child: Text(
+                model.text,
+                style: TextStyle(
+                  color: model.textColor,
+                  fontSize: model.fontSize,
+                ),
+              ),
+            ),
           ),
         ),
+        child: Container(
+          height: screenHeight - 220,
+          width: screenWidth - 10,
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.black),
+            borderRadius: BorderRadius.circular(10.0),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(8.0), // Add padding here
+            child: Container(
+              child: Text(
+                model.text,
+                style: TextStyle(
+                  color: model.textColor,
+                  fontSize: model.fontSize,
+                ),
+              ),
+            ),
+          ),
+        ),
+        onDraggableCanceled: (velocity, offset) {
+          // Update the position when dragged
+          setState(() {
+            position = Offset(
+              position.dx + offset.dx,
+              position.dy + offset.dy,
+            );
+          });
+        },
       ),
     );
   }
 }
+
+
+
 
 class TextEditorControls extends StatelessWidget {
   @override
@@ -111,12 +218,17 @@ class TextEditorControls extends StatelessWidget {
           icon: Icon(FontAwesomeIcons.edit),
           onPressed: () => _showTextEditorDialog(context, model),
         ),
+        IconButton(
+          icon: Icon(Icons.undo),
+          onPressed: model.canUndo() ? () => model.undo() : null,
+        ),
+        IconButton(
+          icon: Icon(Icons.redo),
+          onPressed: model.canRedo() ? () => model.redo() : null,
+        ),
       ],
     );
   }
-
-  // Add functions for handling actions (e.g., changing font size, color, etc.)
-// Add functions for handling actions (e.g., changing font size, color, etc.)
 
   void _showFontSizeDialog(BuildContext context, TextEditorModel model) {
     showDialog(
@@ -131,9 +243,6 @@ class TextEditorControls extends StatelessWidget {
       },
     );
   }
-
-
-
 
   void _showColorPicker(BuildContext context, TextEditorModel model) {
     showDialog(
@@ -186,7 +295,7 @@ class TextEditorControls extends StatelessWidget {
               onPressed: () {
                 Navigator.of(context).pop();
               },
-              child: Text('Cancel'),
+              child: Text('Apply'),
             ),
             TextButton(
               onPressed: () {
@@ -199,7 +308,6 @@ class TextEditorControls extends StatelessWidget {
       },
     );
   }
-
 }
 
 class SliderDialog extends StatefulWidget {
@@ -246,15 +354,9 @@ class _SliderDialogState extends State<SliderDialog> {
           onPressed: () {
             Navigator.of(context).pop();
           },
-          child: Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: () {
-            widget.onChanged(_sliderValue);
-            Navigator.of(context).pop();
-          },
           child: Text('Apply'),
         ),
+
       ],
     );
   }
